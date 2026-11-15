@@ -38,16 +38,22 @@ export function requiredNumber(label: string, value: unknown, field: string): nu
 	return value;
 }
 
+/** Headers that carry the API key. Most classifier APIs take a bearer token. */
+export type ClassifierAuthHeaders = (apiKey: string) => Record<string, string>;
+
+const bearerAuth: ClassifierAuthHeaders = (apiKey) => ({ authorization: `Bearer ${apiKey}` });
+
 function requestHeaders(
 	model: ClassifierModel<ClassifierApi>,
 	apiKey: string,
 	optionsHeaders?: ProviderHeaders,
 	identity?: ClientIdentity,
+	authHeaders: ClassifierAuthHeaders = bearerAuth,
 ): Record<string, string> {
 	return (
 		providerHeadersToRecord(
 			getIdentityHeaders(model, identity),
-			{ authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+			{ ...authHeaders(apiKey), "content-type": "application/json" },
 			model.headers,
 			optionsHeaders,
 		) ?? {}
@@ -61,6 +67,7 @@ export async function postClassifierRequest(
 	body: unknown,
 	options: ClassifierOptions | undefined,
 	noRetryStatuses?: readonly number[],
+	authHeaders?: ClassifierAuthHeaders,
 ): Promise<unknown> {
 	if (!options?.apiKey) throw new Error(`No API key for provider: ${model.provider}`);
 	const apiKey = options.apiKey;
@@ -79,7 +86,7 @@ export async function postClassifierRequest(
 			try {
 				const next = await requestFetch(url, {
 					method: "POST",
-					headers: requestHeaders(model, apiKey, options.headers, options.identity),
+					headers: requestHeaders(model, apiKey, options.headers, options.identity, authHeaders),
 					body: JSON.stringify(payload),
 					signal,
 				});
