@@ -6,6 +6,7 @@ This package is Atomic's fork of `@earendil-works/pi-ai`, published as `@bastani
 
 ### Added
 
+- Added the `google-decisions` classifier provider with Gemini Decision 1 (`google-decisions/gemini-decision-1`) on the [Gemini Decisions API](https://aistudio.google.com/docs/decisions-api). It speaks System One's question and answer shapes, so it runs as a System One transport; it takes `GEMINI_API_KEY` or a key saved for `google`, sends it in `x-goog-api-key`, and accepts text and images.
 - Provider requests and `retryAssistantCall()` accept `retryDeadline`, an absolute `performance.now()` timestamp. An Atomic-managed backoff retry that reaches the deadline is not sent, even if the caller's abort timer has not fired. Omitting it keeps the original retry timing ([#5627](https://github.com/bastani-inc/atomic/issues/5627)).
 
 ### Fixed
