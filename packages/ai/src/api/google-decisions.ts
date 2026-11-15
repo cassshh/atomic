@@ -105,7 +105,7 @@ function wireNames(questions: Record<string, ClassifierQuestion>) {
 	const renameIds = ids.some((id) => !QUESTION_ID.test(id));
 	const wireId = new Map(ids.map((id, index) => [id, renameIds ? standIn("q", index) : id]));
 	const options = new Map<string, Map<string, string>>();
-	const wire: Record<string, ClassifierQuestion> = {};
+	const wire: Array<[string, ClassifierQuestion]> = [];
 	for (const [id, question] of Object.entries(questions)) {
 		let sent = question;
 		if (question.type === "choice") {
@@ -115,17 +115,25 @@ function wireNames(questions: Record<string, ClassifierQuestion>) {
 				options.set(id, names);
 				sent = {
 					...question,
-					criteria: Object.fromEntries(keys.map((key) => [names.get(key)!, question.criteria[key]!])),
+					// A stand-in carries its option's own name, so a label-only option keeps its meaning.
+					criteria: Object.fromEntries(
+						keys.map((key) => {
+							const description = question.criteria[key]!;
+							return [names.get(key)!, description ? `${key.trim()}: ${description}` : key.trim()];
+						}),
+					),
 				};
 			}
 		}
-		wire[wireId.get(id)!] = sent;
+		wire.push([wireId.get(id)!, sent]);
 	}
 	const renamed = renameIds || options.size > 0;
 	const restore = (answers: Record<string, ClassifierAnswer>): Record<string, ClassifierAnswer> =>
 		Object.fromEntries(
 			ids.flatMap((id) => {
-				const answer = answers[wireId.get(id)!];
+				// Own answers only: a failed request answers nothing, and `constructor` is no answer.
+				const name = wireId.get(id)!;
+				const answer = Object.hasOwn(answers, name) ? answers[name] : undefined;
 				if (!answer) return [];
 				const names = options.get(id);
 				if (answer.type !== "choice" || !names) return [[id, answer]];
@@ -144,7 +152,8 @@ function wireNames(questions: Record<string, ClassifierQuestion>) {
 				];
 			}),
 		);
-	return { renamed, wire, restore };
+	// Built from entries so an ID such as `__proto__` stays a question instead of setting the prototype.
+	return { renamed, wire: Object.fromEntries(wire) as Record<string, ClassifierQuestion>, restore };
 }
 
 /** Gemini Decisions classification with public `bool` values mapped to wire-level `noul`. */

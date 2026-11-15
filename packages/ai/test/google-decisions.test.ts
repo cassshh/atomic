@@ -227,7 +227,11 @@ describe("Gemini Decisions", () => {
 		);
 
 		expect(requests[0]?.body.questions).toEqual({
-			q000: { type: "choice", instructions: "Status", criteria: { o000: "Waiting", o001: "Approved" } },
+			q000: {
+				type: "choice",
+				instructions: "Status",
+				criteria: { o000: "pending: Waiting", o001: "approved: Approved" },
+			},
 			q001: { type: "noul", instructions: "Merged?", criteria: {} },
 		});
 		expect(result.stopReason).toBe("stop");
@@ -240,6 +244,48 @@ describe("Gemini Decisions", () => {
 			},
 			[long]: { type: "bool", probability: 0.3 },
 		});
+	});
+
+	it("keeps a label-only option's name, and a __proto__ question, when options are renamed", async () => {
+		const { fetch, requests } = capturingFetch(() =>
+			Response.json({
+				// From entries, as JSON.parse makes it: a literal `__proto__:` would set the prototype.
+				answers: Object.fromEntries([
+					["__proto__", { type: "noul", noul: 0.4, confidence: 0.6 }],
+					["status", { type: "choice", choice: "o000", probabilities: { o000: 0.9, o001: 0.1 }, confidence: 0.9 }],
+				]),
+			}),
+		);
+		const questions = Object.fromEntries([
+			["__proto__", { type: "bool", instructions: "Odd name?", criteria: { true: "", false: "" } }],
+			["status", { type: "choice", instructions: "Status", criteria: { " open": "", closed: "" } }],
+		]) as ClassifierContext["questions"];
+
+		const result = await classify(model, { state: { text: "x" }, questions }, { apiKey: "secret", fetch });
+
+		const sent = requests[0]?.body.questions as Record<string, unknown>;
+		expect(Object.keys(sent)).toEqual(["__proto__", "status"]);
+		expect(sent.status).toEqual({
+			type: "choice",
+			instructions: "Status",
+			criteria: { o000: "open", o001: "closed" },
+		});
+		expect(result.stopReason).toBe("stop");
+		expect(Object.keys(result.answers)).toEqual(["__proto__", "status"]);
+		expect(result.answers.status).toMatchObject({ choice: " open" });
+	});
+
+	it("answers nothing for a renamed request that failed, whatever its question IDs", async () => {
+		const { fetch } = capturingFetch(() => Response.json({ error: { code: "safety" } }, { status: 400 }));
+		const questions = Object.fromEntries([
+			["constructor", { type: "bool", instructions: "x", criteria: { true: "", false: "" } }],
+			["toString", { type: "choice", instructions: "y", criteria: { " a": "", b: "" } }],
+		]) as ClassifierContext["questions"];
+
+		const result = await classify(model, { state: { text: "x" }, questions }, { apiKey: "secret", fetch, maxRetries: 0 });
+
+		expect(result.stopReason).toBe("error");
+		expect(Object.keys(result.answers)).toEqual([]);
 	});
 
 	it("sends names Gemini accepts unchanged", async () => {
