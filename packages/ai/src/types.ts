@@ -105,6 +105,7 @@ export type KnownProvider =
 	| "azure-openai-responses"
 	| "openai-codex"
 	| "openai-decisions"
+	| "google-decisions"
 	| "openai-images"
 	| "typesafe"
 	| "morph"
