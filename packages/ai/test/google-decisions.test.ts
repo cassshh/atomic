@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { classify } from "../src/api/google-decisions.ts";
 import { builtinModels } from "../src/providers/all.js";
-import type { ClassifierContext, ClassifierModel, ImageContent } from "../src/types.js";
+import type { ClassifierContext, ClassifierModel, ImageContent, KnownProvider } from "../src/types.js";
 
 const png: ImageContent = { type: "image", data: "data:image/png;base64,iVBORw0KGgo=", mimeType: "image/png" };
 
@@ -194,7 +194,65 @@ describe("Gemini Decisions", () => {
 		expect(result.stopReason).toBe("error");
 	});
 
+	it("sends names Gemini refuses as stand-ins and answers under the caller's names", async () => {
+		const long = "a".repeat(65);
+		const { fetch, requests } = capturingFetch(() =>
+			Response.json({
+				answers: {
+					q000: {
+						type: "choice",
+						choice: "o001",
+						probabilities: { o000: 0.2, o001: 0.8 },
+						confidence: 0.8,
+					},
+					q001: { type: "noul", noul: 0.3, confidence: 0.7 },
+				},
+			}),
+		);
+
+		const result = await classify(
+			model,
+			{
+				state: { text: "Looks good to me" },
+				questions: {
+					"review.status": {
+						type: "choice",
+						instructions: "Status",
+						criteria: { " pending": "Waiting", approved: "Approved" },
+					},
+					[long]: { type: "bool", instructions: "Merged?", criteria: { true: "", false: "" } },
+				},
+			},
+			{ apiKey: "secret", fetch },
+		);
+
+		expect(requests[0]?.body.questions).toEqual({
+			q000: { type: "choice", instructions: "Status", criteria: { o000: "Waiting", o001: "Approved" } },
+			q001: { type: "noul", instructions: "Merged?", criteria: {} },
+		});
+		expect(result.stopReason).toBe("stop");
+		expect(result.answers).toEqual({
+			"review.status": {
+				type: "choice",
+				choice: "approved",
+				probabilities: { " pending": 0.2, approved: 0.8 },
+				confidence: 0.8,
+			},
+			[long]: { type: "bool", probability: 0.3 },
+		});
+	});
+
+	it("sends names Gemini accepts unchanged", async () => {
+		const { fetch, requests } = capturingFetch(ok);
+
+		await classify(model, context, { apiKey: "secret", fetch });
+
+		expect(Object.keys(requests[0]?.body.questions as object)).toEqual(["category", "satisfaction", "approved"]);
+	});
+
 	it("is a built-in classifier keyed by GEMINI_API_KEY", async () => {
+		const provider: KnownProvider = "google-decisions";
+		expect(provider).toBe("google-decisions");
 		const models = builtinModels({
 			authContext: {
 				env: async (name) => (name === "GEMINI_API_KEY" ? "gemini-key" : undefined),
