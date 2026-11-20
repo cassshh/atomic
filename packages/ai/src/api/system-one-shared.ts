@@ -10,7 +10,13 @@ import type {
 } from "../types.ts";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { RetryDeadlineError } from "../utils/retry-sleep.ts";
-import { isRecord, parseClassifierUsage, postClassifierRequest, requiredNumber } from "./classifier-shared.ts";
+import {
+	type ClassifierAuthHeaders,
+	isRecord,
+	parseClassifierUsage,
+	postClassifierRequest,
+	requiredNumber,
+} from "./classifier-shared.ts";
 
 /** Base64 image in the System One request's top-level `assets` map. */
 export interface SystemOneImageAsset {
@@ -64,8 +70,15 @@ export interface SystemOneTransport {
 	detectCompat(model: ClassifierModel<ClassifierApi>): ResolvedSystemOneCompat;
 	/** Absolute request URL. */
 	url(model: ClassifierModel<ClassifierApi>): URL;
-	/** Wraps the System One request in the service's request envelope. */
-	payload(model: ClassifierModel<ClassifierApi>, request: SystemOneWireRequest): unknown;
+	/**
+	 * Wraps the System One request in the service's request envelope. A transport that sets
+	 * `ownsImages` receives the context images here and places them itself.
+	 */
+	payload(model: ClassifierModel<ClassifierApi>, request: SystemOneWireRequest, images?: ImageContent[]): unknown;
+	/** True when `payload` places images itself instead of using a System One `imageInput` form. */
+	ownsImages?: boolean;
+	/** Headers that carry the API key; a bearer token when unset. */
+	authHeaders?: ClassifierAuthHeaders;
 	/** Extracts the System One output, including answers and usage. */
 	output(body: unknown): Record<string, unknown>;
 }
@@ -234,10 +247,10 @@ export async function classifySystemOne(
 		if (model.api !== transport.api) throw new Error(`Unsupported classifier API: ${model.api}`);
 		const request = wireRequest(context);
 		let requestOptions = options;
-		if (context.images?.length) {
-			if (!model.input.includes("image")) {
-				throw new Error(`${transport.label} does not support image input for ${model.id}`);
-			}
+		if (context.images?.length && !model.input.includes("image")) {
+			throw new Error(`${transport.label} does not support image input for ${model.id}`);
+		}
+		if (context.images?.length && !transport.ownsImages) {
 			const detected = transport.detectCompat(model);
 			addImages(transport.label, model, model.compat?.imageInput ?? detected.imageInput, context.images, request);
 			if (model.compat?.sendImageOptInHeader ?? detected.sendImageOptInHeader) {
@@ -248,8 +261,10 @@ export async function classifySystemOne(
 			transport.label,
 			transport.url(model),
 			model,
-			transport.payload(model, request),
+			transport.payload(model, request, transport.ownsImages ? context.images : undefined),
 			requestOptions,
+			undefined,
+			transport.authHeaders,
 		);
 		const result = transport.output(body);
 		// Malformed answers may still be billed, so retain usage before parsing them.

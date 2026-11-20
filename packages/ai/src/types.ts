@@ -85,7 +85,8 @@ export type KnownClassifierApi =
 	| "typesafe-system-one"
 	| "cloudflare-workers-ai-system-one"
 	| "llama-cpp-classify"
-	| "openai-decisions";
+	| "openai-decisions"
+	| "google-decisions";
 
 export type ClassifierApi = KnownClassifierApi | (string & {});
 
@@ -104,6 +105,7 @@ export type KnownProvider =
 	| "azure-openai-responses"
 	| "openai-codex"
 	| "openai-decisions"
+	| "google-decisions"
 	| "openai-images"
 	| "typesafe"
 	| "morph"
